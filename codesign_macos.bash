@@ -33,7 +33,7 @@ security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
 # Apple中間証明書のインポート
 DEVELOPER_ID_G2_CA="$(mktemp)"
-curl -fsSL -o "$DEVELOPER_ID_G2_CA" "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer"
+curl -fsSL -o "$DEVELOPER_ID_G2_CA" --retry 3 --retry-delay 5 "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer"
 security import "$DEVELOPER_ID_G2_CA" -k "$KEYCHAIN_PATH"
 rm "$DEVELOPER_ID_G2_CA"
 
