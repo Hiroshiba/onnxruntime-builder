@@ -144,3 +144,20 @@
 + IF(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 +   SET(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 +   IF(NOT CMAKE_GENERATOR STREQUAL "Xcode")
+--- a/cmake/patches/xnnpack/AddEmscriptenAndIosSupport.patch
++++ b/cmake/patches/xnnpack/AddEmscriptenAndIosSupport.patch
+@@ -35,3 +35,14 @@
+    SET_PROPERTY(SOURCE ${ALL_NEON_MICROKERNEL_SRCS} APPEND_STRING PROPERTY COMPILE_FLAGS " -march=armv7-a -mfpu=neon ")
+    SET_PROPERTY(SOURCE ${ALL_NEONFP16_MICROKERNEL_SRCS} APPEND_STRING PROPERTY COMPILE_FLAGS " -march=armv7-a -mfpu=neon-fp16 ")
+    # GCC requires -mfp16-format=ieee to define __fp16 type, but Clang doesn't support this option at all.
++
++--- a/src/xnnpack/math.h
+++++ b/src/xnnpack/math.h
++@@ -9,6 +9,7 @@
++ #pragma once
++ 
++ #include <assert.h>
+++#include <math.h>
++ #include <stdbool.h>
++ #include <stddef.h>
++ #include <stdint.h>
