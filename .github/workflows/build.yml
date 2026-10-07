@@ -75,6 +75,19 @@ jobs:
       - name: Build and validate SIMD pthread static library
         run: bash builder/build-wasm-threaded.bash
 
+      - name: Preserve unvalidated output for diagnosis on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: onnxruntime-wasm-static-simd-threaded-diagnostics
+          path: |
+            onnxruntime/build/Release/libonnxruntime_webassembly.a
+            onnxruntime/build/Release/CMakeCache.txt
+            onnxruntime/include/onnxruntime
+            onnxruntime/build/smoke
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Archive artifact
         run: |
           mv artifact "$RELEASE_NAME"

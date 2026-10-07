@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdio>
+#include <exception>
 #include <thread>
 
 #ifndef __EMSCRIPTEN_PTHREADS__
@@ -13,7 +14,7 @@
 #error This test must be compiled and linked with -msimd128.
 #endif
 
-int main() {
+int run_smoke() {
   if (!emscripten_has_threading_support()) {
     std::fputs("Shared-memory threading is unavailable\n", stderr);
     return 1;
@@ -24,11 +25,13 @@ int main() {
   worker.join();  // Synchronizes the worker's write before this read.
   if (!worker_ran) return 2;
 
+  std::fputs("Smoke stage: create ORT environment\n", stderr);
   Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "wasm-threaded-smoke");
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(2);
   options.SetInterOpNumThreads(1);
   options.SetExecutionMode(ORT_SEQUENTIAL);
+  std::fputs("Smoke stage: create two-thread ORT session\n", stderr);
   Ort::Session session(env, "/mul_1.onnx", options);
 
   // Microsoft's pinned mul_1.onnx multiplies X by [[1,2],[3,4],[5,6]].
@@ -39,6 +42,7 @@ int main() {
       memory, input.data(), input.size(), shape.data(), shape.size());
   const char* input_names[] = {"X"};
   const char* output_names[] = {"Y"};
+  std::fputs("Smoke stage: run inference\n", stderr);
   auto output = session.Run(Ort::RunOptions{nullptr}, input_names, &tensor, 1,
                             output_names, 1);
   if (output.size() != 1 ||
@@ -51,4 +55,19 @@ int main() {
   }
   std::puts("PASS: pthread create/join; ORT session intra_op_threads=2; inference values verified");
   return 0;
+}
+
+int main() {
+  try {
+    return run_smoke();
+  } catch (const Ort::Exception& error) {
+    std::fprintf(stderr, "ORT status %d: %s\n", error.GetOrtErrorCode(), error.what());
+    return 90;
+  } catch (const std::exception& error) {
+    std::fprintf(stderr, "Smoke test exception: %s\n", error.what());
+    return 91;
+  } catch (...) {
+    std::fputs("Smoke test raised an unknown exception\n", stderr);
+    return 92;
+  }
 }
