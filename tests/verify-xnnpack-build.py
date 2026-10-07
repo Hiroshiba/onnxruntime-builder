@@ -10,7 +10,7 @@ def verify_compile_commands(path):
     commands = json.loads(path.read_text())
     required = {"-pthread", "-msimd128", "-fno-fast-math", "-ffp-contract=off", "-fwasm-exceptions"}
     forbidden = {"-ffast-math", "-Ofast", "-mrelaxed-simd", "-mfp16", "-ffinite-math-only", "-funsafe-math-optimizations", "-fassociative-math"}
-    counts = {"total": 0, "xnnpack": 0, "pthreadpool": 0, "wasmsimd": 0}
+    counts = {"total": 0, "xnnpack": 0, "pthreadpool": 0, "wasmsimd": 0, "cpuinfo_emscripten": 0}
     pool_sources = set()
     for entry in commands:
         source = entry["file"]
@@ -28,6 +28,7 @@ def verify_compile_commands(path):
             counts["total"] += 1
             counts["xnnpack"] += "googlexnnpack-src" in source
             counts["pthreadpool"] += "pthreadpool-src" in source
+            counts["cpuinfo_emscripten"] += "pytorch_cpuinfo-src/src/emscripten/init.c" in source
             counts["wasmsimd"] += "-wasmsimd" in pathlib.Path(source).name
         if "wasmrelaxed" in source:
             raise ValueError("Relaxed SIMD source was configured")

@@ -30,7 +30,9 @@ POSIX feature definition exposes posix_memalign. These are build integration
 changes, not new numerical kernels or model execution code. ORT 1.23.2 expects amalgamation files that its pinned XNNPACK no longer ships.
 The integration patch instead selects XNNPACK's generated production scalar,
 WASM and ordinary-SIMD source lists, retains its lookup tables, and includes
-`microkernels-prod` inside the final bundled archive. All kernel source is unchanged.
+`microkernels-prod` inside the final bundled archive. Kernel arithmetic is unchanged; a missing standard math header is included.
+The pinned cpuinfo already has an Emscripten backend; the patch enables it in its
+supported-platform list so XNNPACK can initialize successfully.
 Only the archive bundling target is built. CMake install rules are disabled because
 this distribution copies the archive/headers directly and does not export native
 CMake packages.
@@ -39,6 +41,7 @@ Provenance and evidence included:
 
 - `BUILD_INFO.json`: compiler/source/builder pins, flags, EP and thread contract
 - `COMPILE_AUDIT.json`: configured C/C++ compile-command checks
+- `XNNPACK_KERNEL_SMOKE.txt`: strict-FP32 convolution through the real XNNPACK API
 - `PTHREADPOOL_SMOKE.txt`: two-thread work dispatch verified before the full build
 - `XNNPACK_SMOKE.json`: actual provider assignments, profile and worker counts
 - `SMOKE_TEST.txt`: complete final-link smoke output
@@ -60,7 +63,7 @@ types; this is not an FP32-only operator-stripped runtime.
 The audit rejects `-ffast-math`, `-Ofast`, `-mrelaxed-simd`, `-mfp16`,
 `-ffinite-math-only`, unsafe math, associative math and any relaxed-SIMD source file.
 It requires pthread, SIMD, exception and strict math flags on every C/C++ unit,
-requires the real pthreadpool sources and rejects the serial shim.
+requires the real pthreadpool and cpuinfo Emscripten sources, and rejects the serial shim.
 Changing provider may change accumulation order. Bit-identical VOICEVOX PCM is not
 promised; measure PCM error against the matching CPU control.
 
@@ -109,7 +112,8 @@ public headers. Profiling must assign **both** Conv and ConvTranspose to
 counts successful `pthread_create` calls, first validating itself with create/join,
 then requiring zero ORT worker creations and exactly one XNNPACK worker creation.
 A separate small pthreadpool preflight checks that both caller and worker actually
-execute tasks before the costly ORT build starts. WASM profile JSON is captured
+execute tasks before the costly ORT build starts. A direct XNNPACK FP32
+convolution link/run preflight also completes before compiling ORT. WASM profile JSON is captured
 from stdout, which is where the pinned ORT profiler writes it.
 
 It does not prove the actual VOICEVOX decode graph is covered, that workers are

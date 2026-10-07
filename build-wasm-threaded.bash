@@ -75,6 +75,20 @@ em++ "$builder/tests/wasm-pthreadpool-smoke.cc" \
   -o build/smoke/wasm-pthreadpool-smoke.js
 timeout 60 node build/smoke/wasm-pthreadpool-smoke.js 2>&1 | tee build/smoke/PTHREADPOOL_SMOKE.txt
 
+# Link and execute the selected XNNPACK kernels before compiling the larger ORT.
+cmake --build build/Release --config Release --target XNNPACK --parallel 2
+em++ "$builder/tests/wasm-xnnpack-kernel-smoke.cc" \
+  -I "$GITHUB_WORKSPACE/dependency-cache/googlexnnpack-src/include" \
+  -I "$GITHUB_WORKSPACE/dependency-cache/pthreadpool-src/include" \
+  "$GITHUB_WORKSPACE/dependency-cache/googlexnnpack-build/libXNNPACK.a" \
+  "$GITHUB_WORKSPACE/dependency-cache/googlexnnpack-build/libmicrokernels-prod.a" \
+  "$GITHUB_WORKSPACE/dependency-cache/pthreadpool-build/libpthreadpool.a" \
+  "$GITHUB_WORKSPACE/dependency-cache/pytorch_cpuinfo-build/libcpuinfo.a" \
+  -O2 -pthread -msimd128 -fwasm-exceptions -fno-fast-math -ffp-contract=off \
+  -sPTHREAD_POOL_SIZE=2 -sSTACK_SIZE=5242880 -sEXIT_RUNTIME=1 -sENVIRONMENT=node \
+  -o build/smoke/wasm-xnnpack-kernel-smoke.js
+timeout 60 node build/smoke/wasm-xnnpack-kernel-smoke.js 2>&1 | tee build/smoke/XNNPACK_KERNEL_SMOKE.txt
+
 cmake --build build/Release --config Release --target bundling_target --parallel 2
 test -s build/Release/libonnxruntime_webassembly.a
 python "$builder/tests/make-xnnpack-smoke-model.py" build/smoke/xnnpack-smoke.onnx
@@ -104,7 +118,7 @@ cp build/Release/libonnxruntime_webassembly.a "$artifact/lib/"
 cp -R include/onnxruntime "$artifact/include/"
 cp LICENSE README.md ThirdPartyNotices.txt VERSION_NUMBER "$artifact/"
 cp "$builder/WASM_THREADED.md" "$builder/xnnpack-static-dependencies.patch" "$artifact/"
-cp build/smoke/{COMPILE_AUDIT.json,XNNPACK_SMOKE.json,PTHREADPOOL_SMOKE.txt} "$artifact/"
+cp build/smoke/{COMPILE_AUDIT.json,XNNPACK_SMOKE.json,PTHREADPOOL_SMOKE.txt,XNNPACK_KERNEL_SMOKE.txt} "$artifact/"
 git rev-parse HEAD > "$artifact/GIT_COMMIT_ID"
 cp build/smoke/result.txt "$artifact/SMOKE_TEST.txt"
 jq -n \
@@ -124,6 +138,9 @@ jq -n \
     simd: true,
     relaxed_simd: false,
     xnnpack: true,
+    xnnpack_kernel_smoke_passed: true,
+    cpuinfo_source_commit: "8a1772a0c5c447df2d18edf33ec4603a8c9c04a6",
+    cpuinfo_backend: "emscripten",
     pthreadpool_backend: "pthreads",
     pthreadpool_execution_smoke_passed: true,
     xnnpack_source_commit: "fe98e0b93565382648129271381c14d6205255e3",
@@ -144,5 +161,5 @@ jq -n \
   }' > "$artifact/BUILD_INFO.json"
 (
   cd "$artifact"
-  sha256sum lib/libonnxruntime_webassembly.a xnnpack-static-dependencies.patch COMPILE_AUDIT.json XNNPACK_SMOKE.json PTHREADPOOL_SMOKE.txt > SHA256SUMS
+  sha256sum lib/libonnxruntime_webassembly.a xnnpack-static-dependencies.patch COMPILE_AUDIT.json XNNPACK_SMOKE.json PTHREADPOOL_SMOKE.txt XNNPACK_KERNEL_SMOKE.txt > SHA256SUMS
 )
