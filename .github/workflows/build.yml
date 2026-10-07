@@ -1,6 +1,6 @@
 # This experimental branch specializes the existing, dispatchable build workflow.
 # The default branch retains the all-platform shared-library workflow.
-name: Build unsigned WASM SIMD pthread static library
+name: Build unsigned WASM SIMD pthread XNNPACK static library
 
 on:
   push:
@@ -51,7 +51,7 @@ jobs:
           test "$ONNXRUNTIME_VERSION" = '1.23.2'
           test "$TARGET_LIBRARY" = 'onnxruntime'
           test "$CODE_SIGNING" = 'false'
-          echo "RELEASE_NAME=onnxruntime-wasm-static-simd-threaded-$ONNXRUNTIME_VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_NAME=onnxruntime-wasm-static-simd-threaded-xnnpack-$ONNXRUNTIME_VERSION" >> "$GITHUB_ENV"
 
       - name: Checkout builder
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -72,19 +72,37 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build and validate SIMD pthread static library
+      - name: Cache pinned Emscripten toolchain
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            onnxruntime/cmake/external/emsdk/upstream
+            onnxruntime/cmake/external/emsdk/node
+            onnxruntime/cmake/external/emsdk/zips
+          key: wasm-xnnpack-emsdk-${{ runner.os }}-${{ env.EMSCRIPTEN_VERSION }}
+
+      - name: Cache pinned native dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: dependency-cache
+          key: wasm-xnnpack-deps-${{ runner.os }}-${{ env.ONNXRUNTIME_COMMIT }}-${{ env.EMSCRIPTEN_VERSION }}-${{ hashFiles('builder/build-wasm-threaded.bash', 'builder/xnnpack-static-dependencies.patch') }}
+
+      - name: Build and validate SIMD pthread XNNPACK static library
         run: bash builder/build-wasm-threaded.bash
 
       - name: Preserve unvalidated output for diagnosis on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: onnxruntime-wasm-static-simd-threaded-diagnostics
+          name: onnxruntime-wasm-static-simd-threaded-xnnpack-diagnostics
           path: |
             onnxruntime/build/Release/libonnxruntime_webassembly.a
             onnxruntime/build/Release/CMakeCache.txt
+            onnxruntime/build/Release/compile_commands.json
+            onnxruntime/build/Release/onnxruntime_webassembly.ar
             onnxruntime/include/onnxruntime
             onnxruntime/build/smoke
+            dependency-cache/pthreadpool-build/libpthreadpool.a
           if-no-files-found: ignore
           retention-days: 7
 
@@ -97,7 +115,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: onnxruntime-wasm-static-simd-threaded
+          name: onnxruntime-wasm-static-simd-threaded-xnnpack
           path: |
             ${{ env.RELEASE_NAME }}.tgz
             ${{ env.RELEASE_NAME }}.tgz.sha256
@@ -112,25 +130,28 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: onnxruntime-wasm-static-simd-threaded
+          name: onnxruntime-wasm-static-simd-threaded-xnnpack
 
       - name: Create unsigned draft prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          release_name="onnxruntime-wasm-static-simd-threaded-$ONNXRUNTIME_VERSION"
+          release_name="onnxruntime-wasm-static-simd-threaded-xnnpack-$ONNXRUNTIME_VERSION"
           sha256sum --check "$release_name.tgz.sha256"
           cat > release-notes.md <<EOF_NOTES
           Generic ONNX Runtime $ONNXRUNTIME_VERSION static library for wasm32 Emscripten.
-          SIMD and pthreads enabled. Unsigned; no VOICEVOX production sources or signing credentials used.
+          Ordinary SIMD and pthreads enabled; XNNPACK EP enabled. FP32 models, no relaxed SIMD or fast-math. Unsigned; no VOICEVOX production sources or signing credentials used.
 
           - Emscripten: $EMSCRIPTEN_VERSION
           - ONNX Runtime source: $ONNXRUNTIME_COMMIT
           - Builder source: $GITHUB_SHA
-          - Validation: pthread create/join and ONNX Runtime C++ API inference with intra-op threads=2 passed under Node.js
+          - Validation: XNNPACK Conv1d and ConvTranspose1d inference matched scalar FP32 reference
+          - Profiling proved both operators ran on XnnpackExecutionProvider
+          - Thread creation verified ORT global threads=1 (zero workers), XNNPACK threads=2 (one worker)
+          - Static archive includes XNNPACK and pthreadpool dependencies; compile commands audited
           - Browser performance and VOICEVOX CORE integration still require the separate benchmark
 
-          Link the final application with -pthread -msimd128 -fwasm-exceptions using Emscripten $EMSCRIPTEN_VERSION.
+          Link the final application with -pthread -msimd128 -fwasm-exceptions -fno-fast-math -ffp-contract=off using Emscripten $EMSCRIPTEN_VERSION.
           Preallocate a sufficient pthread worker pool and serve the browser app with COOP/COEP headers.
           See WASM_THREADED.md and BUILD_INFO.json in the archive for details.
           EOF_NOTES

@@ -1,0 +1,54 @@
+diff --git a/cmake/onnxruntime_providers_xnnpack.cmake b/cmake/onnxruntime_providers_xnnpack.cmake
+index 1fbe553fa5..ec790b4ce6 100644
+--- a/cmake/onnxruntime_providers_xnnpack.cmake
++++ b/cmake/onnxruntime_providers_xnnpack.cmake
+@@ -21,6 +21,12 @@
+     target_compile_options(onnxruntime_providers_xnnpack PRIVATE -Wno-error=stringop-overflow)
+   endif()
+ 
++  # Make the WASM static bundler traverse XNNPACK and its pthreadpool dependency.
++  # The upstream Emscripten patch deliberately excludes microkernels-prod: the
++  # WASM scalar/SIMD amalgamations are already added to XNNPACK by xnnpack.cmake.
++  if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
++    target_link_libraries(onnxruntime_providers_xnnpack PRIVATE XNNPACK pthreadpool)
++  endif()
+   add_dependencies(onnxruntime_providers_xnnpack onnx ${onnxruntime_EXTERNAL_DEPENDENCIES})
+   set_target_properties(onnxruntime_providers_xnnpack PROPERTIES FOLDER "ONNXRuntime")
+ 
+--- a/cmake/external/xnnpack.cmake
++++ b/cmake/external/xnnpack.cmake
+@@ -21,7 +21,9 @@
+ onnxruntime_fetchcontent_makeavailable(fxdiv)
+ set(FXDIV_SOURCE_DIR ${fxdiv_SOURCE_DIR})
+ 
+-onnxruntime_fetchcontent_declare(pthreadpool URL ${DEP_URL_pthreadpool} URL_HASH SHA1=${DEP_SHA1_pthreadpool} EXCLUDE_FROM_ALL FIND_PACKAGE_ARGS NAMES unofficial-pthreadpool)
++onnxruntime_fetchcontent_declare(pthreadpool URL ${DEP_URL_pthreadpool} URL_HASH SHA1=${DEP_SHA1_pthreadpool}
++  PATCH_COMMAND ${Patch_EXECUTABLE} --binary --ignore-whitespace -p1 < ${PROJECT_SOURCE_DIR}/patches/pthreadpool/enable-wasm-threads.patch
++  EXCLUDE_FROM_ALL FIND_PACKAGE_ARGS NAMES unofficial-pthreadpool)
+ onnxruntime_fetchcontent_makeavailable(pthreadpool)
+ 
+ # ---  Determine target processor
+--- /dev/null
++++ b/cmake/patches/pthreadpool/enable-wasm-threads.patch
+@@ -0,0 +1,21 @@
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -101,7 +101,7 @@
++ IF(PTHREADPOOL_ALLOW_DEPRECATED_API)
++   SET(PTHREADPOOL_SRCS src/legacy-api.c)
++ ENDIF()
++-IF(EMSCRIPTEN)
+++IF(EMSCRIPTEN AND NOT onnxruntime_ENABLE_WEBASSEMBLY_THREADS)
++   LIST(APPEND PTHREADPOOL_SRCS src/shim.c)
++ ELSE()
++   LIST(APPEND PTHREADPOOL_SRCS src/portable-api.c src/memory.c)
++@@ -164,6 +164,9 @@
++   C_EXTENSIONS NO)
++ TARGET_LINK_LIBRARIES(pthreadpool PUBLIC pthreadpool_interface)
++ TARGET_INCLUDE_DIRECTORIES(pthreadpool PRIVATE src)
+++IF(EMSCRIPTEN AND onnxruntime_ENABLE_WEBASSEMBLY_THREADS)
+++  TARGET_COMPILE_DEFINITIONS(pthreadpool PRIVATE _POSIX_C_SOURCE=200809L)
+++ENDIF()
++ IF(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
++   SET(CMAKE_THREAD_PREFER_PTHREAD TRUE)
++   IF(NOT CMAKE_GENERATOR STREQUAL "Xcode")

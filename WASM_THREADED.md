@@ -1,80 +1,124 @@
-# Unsigned generic ONNX Runtime WASM pthread build
+# Unsigned FP32 XNNPACK WASM SIMD pthread experiment
 
-This experimental branch builds **ONNX Runtime 1.23.2**, with Emscripten **4.0.8**,
-SIMD and pthreads. It extends the static-library approach from
-[VOICEVOX/onnxruntime-builder#131](https://github.com/VOICEVOX/onnxruntime-builder/pull/131)
-(head `117593885cd2a66e9cf17b4059e6424d7ea528c9`). It uses only the public Microsoft
-sources. There is no code signing, VOICEVOX production source access or GPU backend.
+This branch builds **ONNX Runtime 1.23.2** at
+`a83fc4d58cb48eb68890dd689f94f28288cf2278` with **Emscripten 4.0.8**, ordinary
+WASM SIMD, pthreads and the **XNNPACK execution provider**. It is a separate
+experiment from the validated CPU-only SIMD pthread archive. No baseline release
+or default branch is replaced, and no VOICEVOX production sources or signing
+credentials are used.
 
-## Run
+## Build and distribution
 
-This branch specializes the existing `build.yml`; the default branch is unchanged.
-The existing `push` and `workflow_dispatch` triggers are retained. A push builds and
-validates one Linux-hosted WASM artifact. To additionally create a draft prerelease:
+The fork-only `build.yml` builds this one target on push. To also create a draft
+prerelease, dispatch it on branch `feat/wasm-simd-pthreads-xnnpack` with
+`version=1.23.2`, `target=onnxruntime`, `release=true`, `code_signing=false`.
+An existing release is never overwritten. Cached Emscripten and native dependencies
+are reused on equivalent builds. Unvalidated archive, compile commands, CMake cache
+and smoke diagnostics are retained on failure.
 
-1. Open [the fork's build workflow](https://github.com/Hiroshiba/onnxruntime-builder/actions/workflows/build.yml)
-2. Choose **Run workflow**, branch **feat/wasm-simd-pthreads-benchmark**
-3. Set `version=1.23.2`, `target=onnxruntime`, `release=true`, `code_signing=false`
-4. Run it; review the smoke-test result and draft prerelease before publishing
+The distinct archive is:
 
-The workflow retains the default branch's input names so it can be dispatched
-without installing a new workflow on `main`. It rejects other versions, private
-runtime targets and signing. It only executes in `Hiroshiba/onnxruntime-builder`.
-An existing release is never overwritten.
+`onnxruntime-wasm-static-simd-threaded-xnnpack-1.23.2.tgz`
 
-The equivalent command, from an authenticated GitHub CLI, is:
+It contains the same application-facing `lib/libonnxruntime_webassembly.a` and
+`include/onnxruntime/` layout as the CPU-only archive. XNNPACK and pthreadpool are
+folded into the single archive. `xnnpack-static-dependencies.patch` makes the static
+bundler traverse the provider's missing dependency edges. It also selects the
+pinned pthreadpool's existing pthread/futex implementation when WASM threads are
+enabled; upstream otherwise selects a serial Emscripten shim. A target-local
+POSIX feature definition exposes posix_memalign. These are build integration
+changes, not new numerical kernels or model execution code. ORT's Emscripten patch intentionally
+excludes `microkernels-prod` from XNNPACK linkage because its WASM amalgamations
+supply the kernels; do not add that archive separately.
 
-```sh
-gh workflow run build.yml --repo Hiroshiba/onnxruntime-builder \
-  --ref feat/wasm-simd-pthreads-benchmark \
-  -f version=1.23.2 -f target=onnxruntime -F release=true -F code_signing=false
-```
+Provenance and evidence included:
 
-## Artifact
+- `BUILD_INFO.json`: compiler/source/builder pins, flags, EP and thread contract
+- `COMPILE_AUDIT.json`: configured C/C++ compile-command checks
+- `PTHREADPOOL_SMOKE.txt`: two-thread work dispatch verified before the full build
+- `XNNPACK_SMOKE.json`: actual provider assignments, profile and worker counts
+- `SMOKE_TEST.txt`: complete final-link smoke output
+- `SHA256SUMS`: archive/evidence/patch file checksums
+- Upstream licenses, third-party notices and the exact source patch
 
-`onnxruntime-wasm-static-simd-threaded-1.23.2.tgz` contains:
+XNNPACK is pinned by ORT to `fe98e0b93565382648129271381c14d6205255e3` and pthreadpool
+to `4e80ca24521aa0fb3a746f9ea9c3eaa20e9afbb0`; their downloads retain upstream hash
+verification. Tests and unused non-production XNNPACK microkernels are not built.
 
-- `lib/libonnxruntime_webassembly.a` and `include/onnxruntime/`
-- `BUILD_INFO.json`: exact source/builder commits, compiler version and flags
-- `SMOKE_TEST.txt`: successful Node.js pthread and ONNX inference check
-- `SHA256SUMS`: checksum of the static archive
-- Upstream license, third-party notices and version information
+## Floating-point scope
 
-A companion `.tgz.sha256` verifies the compressed archive. Its distinct name avoids
-confusing it with PR #131's SIMD **single-threaded** `onnxruntime-wasm-static` package.
-This is a static link input, not an `onnxruntime-web` JavaScript/WASM distribution.
+The experiment runs unchanged FP32 model tensors. It does not quantize, convert to
+FP16, enable relaxed SIMD, or enable fast math. Both compile and final-link flags
+include `-fno-fast-math -ffp-contract=off`. CMake disables relaxed SIMD and ORT CPU
+FP16 training ops. The generic runtime still contains support for other ONNX data
+types; this is not an FP32-only operator-stripped runtime.
 
-## Application link contract
+The audit rejects `-ffast-math`, `-Ofast`, `-mrelaxed-simd`, `-mfp16`,
+`-ffinite-math-only`, unsafe math, associative math and the relaxed-SIMD amalgamation.
+It requires pthread, SIMD, exception and strict math flags on every C/C++ unit,
+requires the real pthreadpool sources and rejects the serial shim.
+Changing provider may change accumulation order. Bit-identical VOICEVOX PCM is not
+promised; measure PCM error against the matching CPU control.
 
-Use Emscripten **4.0.8** throughout the native/WASM dependency graph and final link.
-Compile native dependencies and link the browser glue with:
+## Application link and session contract
+
+Use Emscripten **4.0.8** throughout, and link with:
 
 ```text
--pthread -msimd128 -fwasm-exceptions
+-pthread -msimd128 -fwasm-exceptions -fno-fast-math -ffp-contract=off
 ```
 
-Rust code should enable the Emscripten atomics/bulk-memory target features and pass
-`-pthread` to the final Emscripten linker. A library built without pthreads cannot be
-made threaded merely by changing the number of threads in a session option.
+Register `XNNPACK` explicitly through `SessionOptionsAppendExecutionProvider`, with
+provider option `intra_op_num_threads` set to the intended budget. Registration
+must fail loudly when unavailable; merely having the EP compiled does not select it.
 
-- Preallocate enough workers with `-sPTHREAD_POOL_SIZE=...` before synchronously
-  creating ORT sessions; account for simultaneous pools from all live sessions
-- Set `intra_op_num_threads` explicitly for the benchmark; keep inter-op execution
-  sequential unless that is a separate experimental variable
-- Run synchronous CORE operations in a dedicated browser Worker and keep its event
-  loop available for worker initialization; load every generated glue/worker file
-- Serve over localhost or HTTPS with `Cross-Origin-Opener-Policy: same-origin` and
-  `Cross-Origin-Embedder-Policy: require-corp`; require `crossOriginIsolated` and
-  `SharedArrayBuffer` before starting the threaded mode
-- Choose adequate main/pthread stacks, initial memory and maximum memory at the
-  application link step. The static archive cannot encode those runtime choices
-- Keep a separate non-pthread artifact for a true single-threaded browser baseline;
-  there is no single-binary fallback between pthread and non-pthread builds
+For the initial two-thread experiment:
 
-The CI smoke test checks final linking, shared-memory pthread create/join, ORT
-session construction with two intra-op threads, and inference correctness. It does
-not measure CPU utilization or prove a speedup, and it does not replace the browser
-VOICEVOX CORE benchmark. No performance numbers are inferred from build success.
+- ORT environment global intra-op = **1**, global inter-op = **1**, spinning off
+- Sessions disable per-session ORT pools; execution mode remains sequential
+- XNNPACK intra-op = **2**, giving one XNNPACK worker plus the calling thread
+- Register XNNPACK only on the measured decode session; unrelated model sessions
+  must not allocate additional idle XNNPACK pools
+- CPU fallback nodes run on the calling thread, so their cost is included
+- Compare with a CPU-only session on the same fixed-shape graph and same input
+  using ORT global intra-op = **2**
 
-Sources: [ONNX Runtime build options](https://onnxruntime.ai/docs/build/web.html),
-[Emscripten pthread requirements](https://emscripten.org/docs/porting/pthreads.html).
+XNNPACK and ORT own different pools. Changing the session intra-op setting alone
+cannot configure threaded WASM's global ORT pool. Account for all live XNNPACK
+sessions when preallocating `PTHREAD_POOL_SIZE`; each EP instance owns its pool.
+The smoke application preallocates four reusable workers and proves that only one
+compute pthread is allocated by the tested XNNPACK session, with no ORT workers.
+Preallocated but unused Emscripten Workers are not additional compute pools.
+
+Run synchronous CORE work in a dedicated browser Worker. Serve localhost/HTTPS
+with COOP `same-origin` and COEP `require-corp`; require `crossOriginIsolated` and
+`SharedArrayBuffer`. Choose adequate stacks/memory at final link. This static
+archive is not an `onnxruntime-web` JS/WASM package and has no non-pthread fallback.
+
+## What the validation proves
+
+The smoke builds a tiny fixed-shape FP32 graph with constant weights and bias:
+Conv1d followed by ConvTranspose1d. CPU and XNNPACK outputs are independently checked
+against scalar reference math. A final link uses only the bundled archive and C++
+public headers. Profiling must assign **both** Conv and ConvTranspose to
+`XnnpackExecutionProvider`; silent CPU fallback fails validation. A linker wrapper
+counts successful `pthread_create` calls, first validating itself with create/join,
+then requiring zero ORT worker creations and exactly one XNNPACK worker creation.
+A separate small pthreadpool preflight checks that both caller and worker actually
+execute tasks before the costly ORT build starts. WASM profile JSON is captured
+from stdout, which is where the pinned ORT profiler writes it.
+
+It does not prove the actual VOICEVOX decode graph is covered, that workers are
+busy, or that XNNPACK is faster. VOICEVOX needs separate browser provider profiling,
+output comparison and timing. In ORT 1.23.2, Conv1d/ConvTranspose1d eligibility
+requires known channel/spatial shapes and constant weights. The dynamic sample
+model therefore requires a separately labeled query-derived fixed-shape experiment,
+with an equivalent CPU-only fixed-shape control. Do not label a fallback-only run
+as XNNPACK acceleration.
+
+## Primary source references
+
+- [ORT static bundler](https://github.com/microsoft/onnxruntime/blob/v1.23.2/cmake/onnxruntime_webassembly.cmake)
+- [ORT XNNPACK WASM configuration](https://github.com/microsoft/onnxruntime/blob/v1.23.2/cmake/external/xnnpack.cmake)
+- [Conv1d shape eligibility](https://github.com/microsoft/onnxruntime/blob/v1.23.2/onnxruntime/core/providers/xnnpack/nn/conv_base.cc)
+- [Separate XNNPACK threadpool](https://github.com/microsoft/onnxruntime/blob/v1.23.2/onnxruntime/core/providers/xnnpack/xnnpack_execution_provider.cc)
