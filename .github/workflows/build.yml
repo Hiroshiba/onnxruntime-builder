@@ -1,176 +1,177 @@
-# This experimental branch specializes the existing, dispatchable build workflow.
-# The default branch retains the all-platform shared-library workflow.
-name: Build unsigned WASM SIMD pthread XNNPACK static library
+# Publication-only branch: reuse the tested archive without rebuilding ONNX Runtime.
+name: Publish verified unsigned WASM XNNPACK archive
 
 on:
   push:
   workflow_dispatch:
     inputs:
       version:
-        description: "ONNX Runtime version (this branch supports 1.23.2)"
+        description: "Existing archive version (1.23.2 only)"
         required: true
         default: "1.23.2"
       target:
-        description: "Build target (generic onnxruntime only)"
+        description: "Existing generic archive only"
         type: choice
         default: onnxruntime
         options:
           - onnxruntime
       release:
-        description: "Create a draft prerelease after validation"
+        description: "Publish the verified archive as a public prerelease"
         type: boolean
-        default: false
+        default: true
       code_signing:
-        description: "Must remain false: this build is unsigned"
+        description: "Must remain false"
         type: boolean
         default: false
 
 permissions:
   contents: read
+  actions: read
 
 defaults:
   run:
     shell: bash
 
 env:
-  ONNXRUNTIME_VERSION: ${{ inputs.version || '1.23.2' }}
-  # microsoft/onnxruntime v1.23.2, verified before preparing this build.
-  ONNXRUNTIME_COMMIT: a83fc4d58cb48eb68890dd689f94f28288cf2278
-  EMSCRIPTEN_VERSION: "4.0.8"
-  TARGET_LIBRARY: ${{ inputs.target || 'onnxruntime' }}
-  CODE_SIGNING: ${{ inputs.code_signing && 'true' || 'false' }}
+  SOURCE_RUN_ID: "37615219882"
+  SOURCE_WORKFLOW_ID: "246510935"
+  SOURCE_COMMIT: 72a65470c9873e073d137cef11bb6c9389e62d6a
+  SOURCE_BRANCH: feat/wasm-simd-pthreads-xnnpack
+  RELEASE_NAME: onnxruntime-wasm-static-simd-threaded-xnnpack-1.23.2
+  # Verified against successful validation-run metadata and independently downloaded bytes.
+  EXPECTED_ARTIFACT_ID: "11481001752"
+  EXPECTED_ARTIFACT_DIGEST: "sha256:6dddbff71da8a44d97df40bd75851794b09701ca80b0b84882cd2f48d11d3b61"
+  EXPECTED_ARCHIVE_SHA256: "76182743b15a31e0d361432d8db297a78e3da64aad356730fe93576993af5a2a"
+  EXPECTED_MANIFEST_SHA256: "05cc91519b844c7b3921b7f1ec2b28d9b184efbd917bb8199ee27c0137f8627d"
+  EXPECTED_LIBRARY_SHA256: "407990bee0eb36e4da3500b2cd8d7738b6a6a99de464147ad6fae175969145bd"
 
 jobs:
-  build-wasm-static-lib:
-    if: github.repository == 'Hiroshiba/onnxruntime-builder'
+  verify:
+    if: >-
+      github.repository == 'Hiroshiba/onnxruntime-builder'
+      && github.ref == 'refs/heads/publish/wasm-simd-pthreads-xnnpack'
+      && (github.event_name == 'push' || inputs.release)
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
     steps:
-      - name: Validate unsigned generic build inputs
+      - name: Validate fixed unsigned publication
+        env:
+          VERSION: ${{ inputs.version || '1.23.2' }}
+          TARGET: ${{ inputs.target || 'onnxruntime' }}
+          SIGNING: ${{ inputs.code_signing && 'true' || 'false' }}
         run: |
-          test "$ONNXRUNTIME_VERSION" = '1.23.2'
-          test "$TARGET_LIBRARY" = 'onnxruntime'
-          test "$CODE_SIGNING" = 'false'
-          echo "RELEASE_NAME=onnxruntime-wasm-static-simd-threaded-xnnpack-$ONNXRUNTIME_VERSION" >> "$GITHUB_ENV"
+          test "$VERSION" = '1.23.2'
+          test "$TARGET" = 'onnxruntime'
+          test "$SIGNING" = 'false'
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          [[ "$EXPECTED_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          for pin in "$EXPECTED_ARCHIVE_SHA256" "$EXPECTED_MANIFEST_SHA256" "$EXPECTED_LIBRARY_SHA256"; do
+            [[ "$pin" =~ ^[0-9a-f]{64}$ ]]
+          done
 
-      - name: Checkout builder
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          path: builder
-          persist-credentials: false
+      - name: Verify completed source run and immutable artifact identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > source-run.json
+          jq -e \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg sha "$SOURCE_COMMIT" \
+            --arg branch "$SOURCE_BRANCH" \
+            --argjson run "$SOURCE_RUN_ID" \
+            --argjson workflow "$SOURCE_WORKFLOW_ID" \
+            '.id == $run and .workflow_id == $workflow and .path == ".github/workflows/build.yml"
+             and .head_sha == $sha and .head_branch == $branch and .event == "push"
+             and .name == "Build unsigned WASM SIMD pthread XNNPACK static library"
+             and .repository.full_name == $repo and .head_repository.full_name == $repo
+             and .run_attempt == 1 and .status == "completed" and .conclusion == "success"' \
+            source-run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$EXPECTED_ARTIFACT_ID" > source-artifact.json
+          jq -e \
+            --argjson id "$EXPECTED_ARTIFACT_ID" \
+            --argjson run "$SOURCE_RUN_ID" \
+            --arg sha "$SOURCE_COMMIT" \
+            --arg digest "$EXPECTED_ARTIFACT_DIGEST" \
+            '.id == $id and .name == "onnxruntime-wasm-static-simd-threaded-xnnpack"
+             and .expired == false and .digest == $digest
+             and .workflow_run.id == $run and .workflow_run.head_sha == $sha' \
+            source-artifact.json
 
-      - name: Checkout ONNX Runtime
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          repository: microsoft/onnxruntime
-          ref: ${{ env.ONNXRUNTIME_COMMIT }}
-          submodules: recursive
-          path: onnxruntime
           persist-credentials: false
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
-      - name: Cache pinned Emscripten toolchain
-        id: cache-emsdk
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: |
-            onnxruntime/cmake/external/emsdk/upstream
-            onnxruntime/cmake/external/emsdk/node
-            onnxruntime/cmake/external/emsdk/zips
-          key: wasm-xnnpack-emsdk-${{ runner.os }}-${{ env.EMSCRIPTEN_VERSION }}
+          artifact-ids: ${{ env.EXPECTED_ARTIFACT_ID }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: candidate
+          merge-multiple: true
 
-      - name: Cache pinned native dependencies
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: dependency-cache
-          key: wasm-xnnpack-deps-${{ runner.os }}-${{ env.ONNXRUNTIME_COMMIT }}-${{ env.EMSCRIPTEN_VERSION }}-${{ hashFiles('builder/build-wasm-threaded.bash', 'builder/xnnpack-static-dependencies.patch') }}
+      - name: Verify archive, manifest, library and smoke result
+        run: python verify-wasm-release.py candidate
 
-      - name: Build and validate SIMD pthread XNNPACK static library
-        run: bash builder/build-wasm-threaded.bash
-
-      - name: Preserve downloaded toolchain even if validation fails
-        if: always() && steps.cache-emsdk.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            onnxruntime/cmake/external/emsdk/upstream
-            onnxruntime/cmake/external/emsdk/node
-            onnxruntime/cmake/external/emsdk/zips
-          key: wasm-xnnpack-emsdk-${{ runner.os }}-${{ env.EMSCRIPTEN_VERSION }}
-
-      - name: Preserve unvalidated output for diagnosis on failure
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: onnxruntime-wasm-static-simd-threaded-xnnpack-diagnostics
-          path: |
-            onnxruntime/build/Release/libonnxruntime_webassembly.a
-            onnxruntime/build/Release/CMakeCache.txt
-            onnxruntime/build/Release/compile_commands.json
-            onnxruntime/build/Release/onnxruntime_webassembly.ar
-            onnxruntime/include/onnxruntime
-            onnxruntime/build/smoke
-            dependency-cache/pthreadpool-build/libpthreadpool.a
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Archive artifact
-        run: |
-          mv artifact "$RELEASE_NAME"
-          tar -czf "$RELEASE_NAME.tgz" "$RELEASE_NAME"
-          sha256sum "$RELEASE_NAME.tgz" > "$RELEASE_NAME.tgz.sha256"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: onnxruntime-wasm-static-simd-threaded-xnnpack
-          path: |
-            ${{ env.RELEASE_NAME }}.tgz
-            ${{ env.RELEASE_NAME }}.tgz.sha256
-          if-no-files-found: error
-
-  create-draft-release:
-    needs: build-wasm-static-lib
-    if: github.event_name == 'workflow_dispatch' && inputs.release
+  publish:
+    needs: verify
     runs-on: ubuntu-22.04
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: onnxruntime-wasm-static-simd-threaded-xnnpack
+          artifact-ids: ${{ env.EXPECTED_ARTIFACT_ID }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
 
-      - name: Create unsigned draft prerelease
+      - name: Publish the exact verified archive without replacement
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          release_name="onnxruntime-wasm-static-simd-threaded-xnnpack-$ONNXRUNTIME_VERSION"
-          sha256sum --check "$release_name.tgz.sha256"
+          printf '%s  %s.tgz\n' "$EXPECTED_ARCHIVE_SHA256" "$RELEASE_NAME" | sha256sum --check
+          sha256sum --check "$RELEASE_NAME.tgz.sha256"
+          # A preexisting tag could point elsewhere; never reuse, replace or delete it.
+          if response=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_NAME" 2>&1); then
+            echo '::error::Release tag already exists; stop for review.'
+            exit 1
+          elif [[ "$response" != *'(HTTP 404)'* ]]; then
+            printf '%s\n' "$response" >&2
+            exit 1
+          fi
           cat > release-notes.md <<EOF_NOTES
-          Generic ONNX Runtime $ONNXRUNTIME_VERSION static library for wasm32 Emscripten.
-          Ordinary SIMD and pthreads enabled; XNNPACK EP enabled. FP32 models, no relaxed SIMD or fast-math. Unsigned; no VOICEVOX production sources or signing credentials used.
+          Generic ONNX Runtime 1.23.2 static library with ordinary SIMD, pthreads and XNNPACK.
+          Unsigned FP32 experimental prerelease. Public pinned sources only.
 
-          - Emscripten: $EMSCRIPTEN_VERSION
-          - ONNX Runtime source: $ONNXRUNTIME_COMMIT
-          - Builder source: $GITHUB_SHA
-          - Validation: XNNPACK Conv1d and ConvTranspose1d inference matched scalar FP32 reference
-          - Profiling proved both operators ran on XnnpackExecutionProvider
-          - Thread creation verified ORT global threads=1 (zero workers), XNNPACK threads=2 (one worker)
-          - Static archive includes XNNPACK and pthreadpool dependencies; compile commands audited
-          - Browser performance and VOICEVOX CORE integration still require the separate benchmark
+          - ONNX Runtime source: a83fc4d58cb48eb68890dd689f94f28288cf2278
+          - Builder source: $SOURCE_COMMIT
+          - Successful build and validation: https://github.com/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID
+          - Emscripten: 4.0.8
+          - Archive SHA-256: $EXPECTED_ARCHIVE_SHA256
+          - Strict floating point: no relaxed SIMD, fast-math or model precision conversion
+          - Node smoke: actual XNNPACK Conv1d and ConvTranspose1d provider assignments, scalar reference outputs verified
+          - Actual pool proof: ORT global1 creates zero workers; XNNPACK2 creates one worker
+          - Standalone pthreadpool preflight: caller and worker both executed verified tasks
+          - Browser VOICEVOX CORE graph coverage, numerical error and performance require separate measurement
 
-          Link the final application with -pthread -msimd128 -fwasm-exceptions -fno-fast-math -ffp-contract=off using Emscripten $EMSCRIPTEN_VERSION.
-          Preallocate a sufficient pthread worker pool and serve the browser app with COOP/COEP headers.
-          See WASM_THREADED.md and BUILD_INFO.json in the archive for details.
+          This is the exact successful CI artifact; ONNX Runtime was not rebuilt for publication.
+          The CPU-only SIMD pthread release remains available independently.
+          Link with -pthread -msimd128 -fwasm-exceptions -fno-fast-math -ffp-contract=off.
+          Use an adequate pthread worker pool and COOP/COEP headers in browsers.
+          See WASM_THREADED.md, BUILD_INFO.json and XNNPACK_SMOKE.json in the archive.
           EOF_NOTES
-          # Do not overwrite or replace an existing release/tag on a rerun.
-          gh release create "$release_name" \
-            "$release_name.tgz" "$release_name.tgz.sha256" \
+          gh release create "$RELEASE_NAME" \
+            "$RELEASE_NAME.tgz" "$RELEASE_NAME.tgz.sha256" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "$release_name (unsigned)" \
+            --target "$SOURCE_COMMIT" \
+            --title "$RELEASE_NAME (unsigned)" \
             --notes-file release-notes.md \
-            --draft --prerelease
+            --prerelease --latest=false
