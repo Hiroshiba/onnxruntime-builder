@@ -6,29 +6,19 @@ SIMD and pthreads. It extends the static-library approach from
 (head `117593885cd2a66e9cf17b4059e6424d7ea528c9`). It uses only the public Microsoft
 sources. There is no code signing, VOICEVOX production source access or GPU backend.
 
-## Run
+## Validate an existing build
 
-This branch specializes the existing `build.yml`; the default branch is unchanged.
-The existing `push` and `workflow_dispatch` triggers are retained. A push builds and
-validates one Linux-hosted WASM artifact. To additionally create a draft prerelease:
+This branch reuses a digest-pinned diagnostic archive from the original build.
+It does not rebuild ONNX Runtime. The original compile/link succeeded, but its
+smoke used an ordinary environment. Threaded WASM's default session options
+require an environment configured with global thread pools.
+This workflow relinks the smoke with that corrected initialization, runs it,
+and packages the original static archive only after successful validation.
 
-1. Open [the fork's build workflow](https://github.com/Hiroshiba/onnxruntime-builder/actions/workflows/build.yml)
-2. Choose **Run workflow**, branch **feat/wasm-simd-pthreads-benchmark**
-3. Set `version=1.23.2`, `target=onnxruntime`, `release=true`, `code_signing=false`
-4. Run it; review the smoke-test result and draft prerelease before publishing
-
-The workflow retains the default branch's input names so it can be dispatched
-without installing a new workflow on `main`. It rejects other versions, private
-runtime targets and signing. It only executes in `Hiroshiba/onnxruntime-builder`.
-An existing release is never overwritten.
-
-The equivalent command, from an authenticated GitHub CLI, is:
-
-```sh
-gh workflow run build.yml --repo Hiroshiba/onnxruntime-builder \
-  --ref feat/wasm-simd-pthreads-benchmark \
-  -f version=1.23.2 -f target=onnxruntime -F release=true -F code_signing=false
-```
+The exact original build and successful validation commits/run IDs are recorded
+separately in `BUILD_INFO.json`. A failed original build is never described as
+successful. A separate, reviewed publication workflow can publish the resulting
+verified archive without rebuilding it.
 
 ## Artifact
 
@@ -58,9 +48,16 @@ Rust code should enable the Emscripten atomics/bulk-memory target features and p
 made threaded merely by changing the number of threads in a session option.
 
 - Preallocate enough workers with `-sPTHREAD_POOL_SIZE=...` before synchronously
-  creating ORT sessions; account for simultaneous pools from all live sessions
-- Set `intra_op_num_threads` explicitly for the benchmark; keep inter-op execution
-  sequential unless that is a separate experimental variable
+  creating ORT environments; account for all live global pools and application workers
+- **Create the environment with global thread pools**. In ORT 1.23.2, threaded
+  WASM defaults to `use_per_session_threads=false`. Use
+  `CreateEnvWithGlobalThreadPools` (or `Ort::Env` with `Ort::ThreadingOptions`),
+  set global intra-op threads explicitly, and set global inter-op threads to one
+- Call `DisablePerSessionThreads` on sessions and keep execution sequential.
+  Setting only the session's intra-op thread count does not configure the global
+  pool. An ordinary environment causes session construction to fail
+- One shared global pool serves all sessions in that environment; size the worker
+  pool for the actual live global pools and other application workers
 - Run synchronous CORE operations in a dedicated browser Worker and keep its event
   loop available for worker initialization; load every generated glue/worker file
 - Serve over localhost or HTTPS with `Cross-Origin-Opener-Policy: same-origin` and

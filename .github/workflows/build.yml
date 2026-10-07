@@ -1,100 +1,161 @@
-# This experimental branch specializes the existing, dispatchable build workflow.
-# The default branch retains the all-platform shared-library workflow.
-name: Build unsigned WASM SIMD pthread static library
+# Reuse the diagnostic archive; no ONNX Runtime compilation happens on this branch.
+name: Validate existing unsigned WASM pthread archive
 
 on:
   push:
   workflow_dispatch:
     inputs:
       version:
-        description: "ONNX Runtime version (this branch supports 1.23.2)"
+        description: "Existing archive version (1.23.2 only)"
         required: true
         default: "1.23.2"
       target:
-        description: "Build target (generic onnxruntime only)"
+        description: "Existing generic archive only"
         type: choice
         default: onnxruntime
         options:
           - onnxruntime
       release:
-        description: "Create a draft prerelease after validation"
+        description: "Reserved; validation never publishes a release"
         type: boolean
         default: false
       code_signing:
-        description: "Must remain false: this build is unsigned"
+        description: "Must remain false"
         type: boolean
         default: false
 
 permissions:
   contents: read
+  actions: read
 
 defaults:
   run:
     shell: bash
 
 env:
-  ONNXRUNTIME_VERSION: ${{ inputs.version || '1.23.2' }}
-  # microsoft/onnxruntime v1.23.2, verified before preparing this build.
+  SOURCE_BUILD_RUN_ID: "37580026341"
+  SOURCE_BUILD_WORKFLOW_ID: "246510935"
+  SOURCE_BUILD_COMMIT: 544ff6330dd87f79c55714d4e3bed6046e7d95d9
   ONNXRUNTIME_COMMIT: a83fc4d58cb48eb68890dd689f94f28288cf2278
+  ONNXRUNTIME_VERSION: "1.23.2"
   EMSCRIPTEN_VERSION: "4.0.8"
-  TARGET_LIBRARY: ${{ inputs.target || 'onnxruntime' }}
-  CODE_SIGNING: ${{ inputs.code_signing && 'true' || 'false' }}
+  RELEASE_NAME: onnxruntime-wasm-static-simd-threaded-1.23.2
+  # Verified against the completed diagnostic run and downloaded ZIP/library bytes.
+  EXPECTED_ARTIFACT_ID: "11464173881"
+  EXPECTED_ARTIFACT_DIGEST: sha256:be345592f0797ed4cd1100139ea49549460c9ea724277c47b8eebb3845e7a3c5
+  EXPECTED_LIBRARY_SHA256: 0d62a53ddb7924704abb640daa55153e15f0cc1eca63d5f2a191f23654f7b57a
 
 jobs:
-  build-wasm-static-lib:
-    if: github.repository == 'Hiroshiba/onnxruntime-builder'
+  validate:
+    if: >-
+      github.repository == 'Hiroshiba/onnxruntime-builder'
+      && github.ref == 'refs/heads/validate/wasm-simd-pthreads-benchmark'
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
-      - name: Validate unsigned generic build inputs
+      - name: Validate fixed unsigned inputs and expected artifact pins
+        env:
+          VERSION: ${{ inputs.version || '1.23.2' }}
+          TARGET: ${{ inputs.target || 'onnxruntime' }}
+          SIGNING: ${{ inputs.code_signing && 'true' || 'false' }}
         run: |
-          test "$ONNXRUNTIME_VERSION" = '1.23.2'
-          test "$TARGET_LIBRARY" = 'onnxruntime'
-          test "$CODE_SIGNING" = 'false'
-          echo "RELEASE_NAME=onnxruntime-wasm-static-simd-threaded-$ONNXRUNTIME_VERSION" >> "$GITHUB_ENV"
+          test "$VERSION" = '1.23.2'
+          test "$TARGET" = 'onnxruntime'
+          test "$SIGNING" = 'false'
+          [[ "$EXPECTED_ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          [[ "$EXPECTED_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_LIBRARY_SHA256" =~ ^[0-9a-f]{64}$ ]]
 
-      - name: Checkout builder
+      - name: Verify exact diagnostic build and immutable artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_BUILD_RUN_ID" > source-run.json
+          jq -e \
+            --arg repo "$GITHUB_REPOSITORY" --arg sha "$SOURCE_BUILD_COMMIT" \
+            --argjson run "$SOURCE_BUILD_RUN_ID" --argjson workflow "$SOURCE_BUILD_WORKFLOW_ID" \
+            '.id == $run and .workflow_id == $workflow and .path == ".github/workflows/build.yml"
+             and .head_sha == $sha and .head_branch == "feat/wasm-simd-pthreads-benchmark"
+             and .event == "push" and .run_attempt == 1
+             and .name == "Build unsigned WASM SIMD pthread static library"
+             and .repository.full_name == $repo and .head_repository.full_name == $repo
+             and .status == "completed" and .conclusion == "failure"' source-run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$EXPECTED_ARTIFACT_ID" > source-artifact.json
+          jq -e \
+            --argjson id "$EXPECTED_ARTIFACT_ID" --argjson run "$SOURCE_BUILD_RUN_ID" \
+            --arg sha "$SOURCE_BUILD_COMMIT" --arg digest "$EXPECTED_ARTIFACT_DIGEST" \
+            '.id == $id and .name == "onnxruntime-wasm-static-simd-threaded-diagnostics"
+             and .expired == false and .digest == $digest
+             and .workflow_run.id == $run and .workflow_run.head_sha == $sha' source-artifact.json
+
+      - name: Checkout validation sources
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           path: builder
           persist-credentials: false
 
-      - name: Checkout ONNX Runtime
+      - name: Checkout pinned model and license files
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: microsoft/onnxruntime
           ref: ${{ env.ONNXRUNTIME_COMMIT }}
-          submodules: recursive
           path: onnxruntime
           persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /LICENSE
+            /README.md
+            /ThirdPartyNotices.txt
+            /VERSION_NUMBER
+            /onnxruntime/test/testdata/mul_1.onnx
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - name: Checkout the original ORT Emscripten SDK revision
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          python-version: "3.12"
+          repository: emscripten-core/emsdk
+          ref: 419021fa040428bc69ef1559b325addb8e10211f
+          path: emsdk
+          persist-credentials: false
 
-      - name: Build and validate SIMD pthread static library
-        run: bash builder/build-wasm-threaded.bash
+      - name: Download and verify exact diagnostic ZIP before extraction
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$EXPECTED_ARTIFACT_ID/zip" > unvalidated.zip
+          printf '%s  unvalidated.zip\n' "${EXPECTED_ARTIFACT_DIGEST#sha256:}" | sha256sum --check
+          python3 - <<'PY_ZIP'
+          from pathlib import PurePosixPath
+          import stat
+          import zipfile
+          with zipfile.ZipFile("unvalidated.zip") as archive:
+              names = set()
+              for member in archive.infolist():
+                  path = PurePosixPath(member.filename)
+                  if path.is_absolute() or ".." in path.parts or not path.parts:
+                      raise ValueError("Unsafe diagnostic archive path")
+                  if path.parts[0] not in ("build", "include"):
+                      raise ValueError("Unexpected diagnostic archive root")
+                  if stat.S_ISLNK(member.external_attr >> 16):
+                      raise ValueError("Symlinks are not accepted")
+                  if member.filename in names:
+                      raise ValueError("Duplicate diagnostic archive path")
+                  names.add(member.filename)
+              archive.extractall("unvalidated")
+          PY_ZIP
 
-      - name: Preserve unvalidated output for diagnosis on failure
+      - name: Relink, validate global thread pools and package
+        run: bash builder/validate-wasm-threaded.bash
+
+      - name: Preserve validation output if the test fails
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: onnxruntime-wasm-static-simd-threaded-diagnostics
-          path: |
-            onnxruntime/build/Release/libonnxruntime_webassembly.a
-            onnxruntime/build/Release/CMakeCache.txt
-            onnxruntime/include/onnxruntime
-            onnxruntime/build/smoke
+          name: wasm-threaded-validation-diagnostics
+          path: validation/
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Archive artifact
-        run: |
-          mv artifact "$RELEASE_NAME"
-          tar -czf "$RELEASE_NAME.tgz" "$RELEASE_NAME"
-          sha256sum "$RELEASE_NAME.tgz" > "$RELEASE_NAME.tgz.sha256"
-
-      - name: Upload artifact
+      - name: Upload successfully validated archive
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: onnxruntime-wasm-static-simd-threaded
@@ -102,43 +163,3 @@ jobs:
             ${{ env.RELEASE_NAME }}.tgz
             ${{ env.RELEASE_NAME }}.tgz.sha256
           if-no-files-found: error
-
-  create-draft-release:
-    needs: build-wasm-static-lib
-    if: github.event_name == 'workflow_dispatch' && inputs.release
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: onnxruntime-wasm-static-simd-threaded
-
-      - name: Create unsigned draft prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          release_name="onnxruntime-wasm-static-simd-threaded-$ONNXRUNTIME_VERSION"
-          sha256sum --check "$release_name.tgz.sha256"
-          cat > release-notes.md <<EOF_NOTES
-          Generic ONNX Runtime $ONNXRUNTIME_VERSION static library for wasm32 Emscripten.
-          SIMD and pthreads enabled. Unsigned; no VOICEVOX production sources or signing credentials used.
-
-          - Emscripten: $EMSCRIPTEN_VERSION
-          - ONNX Runtime source: $ONNXRUNTIME_COMMIT
-          - Builder source: $GITHUB_SHA
-          - Validation: pthread create/join and ONNX Runtime C++ API inference with intra-op threads=2 passed under Node.js
-          - Browser performance and VOICEVOX CORE integration still require the separate benchmark
-
-          Link the final application with -pthread -msimd128 -fwasm-exceptions using Emscripten $EMSCRIPTEN_VERSION.
-          Preallocate a sufficient pthread worker pool and serve the browser app with COOP/COEP headers.
-          See WASM_THREADED.md and BUILD_INFO.json in the archive for details.
-          EOF_NOTES
-          # Do not overwrite or replace an existing release/tag on a rerun.
-          gh release create "$release_name" \
-            "$release_name.tgz" "$release_name.tgz.sha256" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "$release_name (unsigned)" \
-            --notes-file release-notes.md \
-            --draft --prerelease

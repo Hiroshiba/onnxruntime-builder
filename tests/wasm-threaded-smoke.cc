@@ -25,11 +25,15 @@ int run_smoke() {
   worker.join();  // Synchronizes the worker's write before this read.
   if (!worker_ran) return 2;
 
-  std::fputs("Smoke stage: create ORT environment\n", stderr);
-  Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "wasm-threaded-smoke");
+  // Threaded WASM defaults to shared environment pools, unlike native/ST builds.
+  // Set the real pool size on the environment, not on each session.
+  std::fputs("Smoke stage: create global two-thread ORT environment\n", stderr);
+  Ort::ThreadingOptions threading;
+  threading.SetGlobalIntraOpNumThreads(2);
+  threading.SetGlobalInterOpNumThreads(1);
+  Ort::Env env(threading, ORT_LOGGING_LEVEL_WARNING, "wasm-threaded-smoke");
   Ort::SessionOptions options;
-  options.SetIntraOpNumThreads(2);
-  options.SetInterOpNumThreads(1);
+  options.DisablePerSessionThreads();
   options.SetExecutionMode(ORT_SEQUENTIAL);
   std::fputs("Smoke stage: create two-thread ORT session\n", stderr);
   Ort::Session session(env, "/mul_1.onnx", options);
