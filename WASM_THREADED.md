@@ -27,9 +27,13 @@ bundler traverse the provider's missing dependency edges. It also selects the
 pinned pthreadpool's existing pthread/futex implementation when WASM threads are
 enabled; upstream otherwise selects a serial Emscripten shim. A target-local
 POSIX feature definition exposes posix_memalign. These are build integration
-changes, not new numerical kernels or model execution code. ORT's Emscripten patch intentionally
-excludes `microkernels-prod` from XNNPACK linkage because its WASM amalgamations
-supply the kernels; do not add that archive separately.
+changes, not new numerical kernels or model execution code. ORT 1.23.2 expects amalgamation files that its pinned XNNPACK no longer ships.
+The integration patch instead selects XNNPACK's generated production scalar,
+WASM and ordinary-SIMD source lists, retains its lookup tables, and includes
+`microkernels-prod` inside the final bundled archive. All kernel source is unchanged.
+Only the archive bundling target is built. CMake install rules are disabled because
+this distribution copies the archive/headers directly and does not export native
+CMake packages.
 
 Provenance and evidence included:
 
@@ -54,7 +58,7 @@ FP16 training ops. The generic runtime still contains support for other ONNX dat
 types; this is not an FP32-only operator-stripped runtime.
 
 The audit rejects `-ffast-math`, `-Ofast`, `-mrelaxed-simd`, `-mfp16`,
-`-ffinite-math-only`, unsafe math, associative math and the relaxed-SIMD amalgamation.
+`-ffinite-math-only`, unsafe math, associative math and any relaxed-SIMD source file.
 It requires pthread, SIMD, exception and strict math flags on every C/C++ unit,
 requires the real pthreadpool sources and rejects the serial shim.
 Changing provider may change accumulation order. Bit-identical VOICEVOX PCM is not

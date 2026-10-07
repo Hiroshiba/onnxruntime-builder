@@ -42,6 +42,7 @@ python ./tools/ci_build/build.py \
   --skip_tests \
   --cmake_extra_defines \
     CMAKE_EXPORT_COMPILE_COMMANDS=ON \
+    CMAKE_SKIP_INSTALL_RULES=ON \
     'CMAKE_C_FLAGS=-fwasm-exceptions -fno-fast-math -ffp-contract=off' \
     'CMAKE_CXX_FLAGS=-fwasm-exceptions -fno-fast-math -ffp-contract=off' \
     "FETCHCONTENT_BASE_DIR=$GITHUB_WORKSPACE/dependency-cache" \
@@ -74,7 +75,7 @@ em++ "$builder/tests/wasm-pthreadpool-smoke.cc" \
   -o build/smoke/wasm-pthreadpool-smoke.js
 timeout 60 node build/smoke/wasm-pthreadpool-smoke.js 2>&1 | tee build/smoke/PTHREADPOOL_SMOKE.txt
 
-cmake --build build/Release --config Release --parallel 2
+cmake --build build/Release --config Release --target bundling_target --parallel 2
 test -s build/Release/libonnxruntime_webassembly.a
 python "$builder/tests/make-xnnpack-smoke-model.py" build/smoke/xnnpack-smoke.onnx
 

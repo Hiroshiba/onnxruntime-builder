@@ -18,7 +18,7 @@ class VerifierTests(unittest.TestCase):
 
     def compile_input(self, extra=""):
         flags = "-pthread -msimd128 -fno-fast-math -ffp-contract=off -fwasm-exceptions " + extra
-        sources = ["/googlexnnpack-src/src/amalgam/gen/wasmsimd.c"]
+        sources = ["/googlexnnpack-src/src/f32-gemm/gen/f32-gemm-4x8-minmax-wasmsimd-x86-splat.c"]
         sources += ["/pthreadpool-src/src/" + p for p in ("pthreads.c", "portable-api.c", "memory.c")]
         self.path.write_text(json.dumps([{"file": p, "command": f"emcc {flags} -c {p}"} for p in sources]))
 

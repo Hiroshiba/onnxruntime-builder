@@ -28,9 +28,9 @@ def verify_compile_commands(path):
             counts["total"] += 1
             counts["xnnpack"] += "googlexnnpack-src" in source
             counts["pthreadpool"] += "pthreadpool-src" in source
-            counts["wasmsimd"] += source.endswith("/amalgam/gen/wasmsimd.c")
-        if "/amalgam/gen/wasmrelaxedsimd.c" in source:
-            raise ValueError("Relaxed SIMD amalgamation was compiled")
+            counts["wasmsimd"] += "-wasmsimd" in pathlib.Path(source).name
+        if "wasmrelaxed" in source:
+            raise ValueError("Relaxed SIMD source was configured")
     if not all(counts.values()):
         raise ValueError(f"Missing expected compilation units: {counts}")
     if not {"pthreads.c", "portable-api.c", "memory.c"} <= pool_sources:
