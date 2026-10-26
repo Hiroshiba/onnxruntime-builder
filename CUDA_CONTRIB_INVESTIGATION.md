@@ -20,7 +20,7 @@ The GitHub connector has no workflow-dispatch tool, and this local environment h
 
 Dispatch proof: https://github.com/Hiroshiba/onnxruntime-builder/actions/runs/40314425400
 
-The initial branch creation also triggered the original push workflow. That superseded run (40313919867) was cancelled through the same browser-free mechanism. The launcher currently contains that cancellation request; edit it deliberately for a subsequent dispatch. Do not rerun it to launch another build.
+The initial branch creation also triggered the original push workflow. That superseded run (40313919867) was cancelled through the same browser-free mechanism. The launcher was subsequently changed to dispatch the no-QUICK_BUILD experiment. It runs only when its own workflow file changes.
 
 ## Source findings (not build-result claims)
 
@@ -39,3 +39,14 @@ The initial branch creation also triggered the original push workflow. That supe
 - Build outcomes are PENDING. No claim that the timeout is fixed has been made.
 - Compare Windows and Linux baseline/enabled durations and failures first. If enabling contrib succeeds, the disabled-contrib patch becomes inapplicable and can be removed from the final configuration. Next test QUICK_BUILD and the individual feature-disable options one at a time; retain resource/architecture constraints until measured.
 - Diagnostics artifacts contain build output and CMakeCache.txt, including failure cases when the runner can still upload artifacts.
+
+## Second experiment and automatic collection
+
+- Run https://github.com/Hiroshiba/onnxruntime-builder/actions/runs/40317058496 removes both `--disable_contrib_ops` and `onnxruntime_QUICK_BUILD=ON`, retaining the other PR #137 options and toolchains.
+- The disabled-contrib patch is removed in this experiment because its CMake branch is never used with contrib enabled.
+- Both Windows and Linux are cold builds; this is still a pending experiment, not a verified fix.
+- `.github/workflows/finalize-cuda-investigation.yml` waits for the two exact workflow-dispatch runs and checks their pinned commit identities.
+- If the no-QUICK_BUILD candidate passes on both platforms, the collector creates `fix/ort-1.31-cuda-contrib` from the PR baseline with just the two option removals, patch deletion, and a result report. If only the contrib-enabled candidate passes on both platforms, QUICK_BUILD is retained. If neither passes on both platforms, it publishes the failed-results report without creating a fix branch.
+- It never changes the default branch or overwrites an existing fix branch. No release or pull request is created.
+- Its GitHub job summary and `cuda-investigation-results` artifact report the actual outcomes. If a fix branch is created, `CUDA_CONTRIB_RESULTS.md` is also committed there.
+- Passing builds do not verify CUDA inference on real hardware. The remaining options have not yet been tested for removal.
