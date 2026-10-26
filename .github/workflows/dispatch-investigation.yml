@@ -9,10 +9,13 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - name: Cancel the superseded branch-creation build
+      - name: Dispatch contrib build without QUICK_BUILD
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BUILD_REF: ${{ github.ref_name }}
         run: |
-          gh run cancel 40313919867 --repo "$GH_REPO"
+          gh workflow run build.yml --repo "$GH_REPO" --ref "$BUILD_REF" \
+            -f version=1.31.0 \
+            -f commit_hash=402979ac1bef89dcd55add41eaa7277c407599eb \
+            -f target=onnxruntime -f release=false -f code_signing=false
