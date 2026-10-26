@@ -9,7 +9,7 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch six individual CUDA option removals
+      - name: Dispatch repeated timings and combined option removals
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
