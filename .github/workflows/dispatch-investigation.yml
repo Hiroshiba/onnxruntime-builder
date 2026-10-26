@@ -1,0 +1,21 @@
+name: Dispatch CUDA contrib investigation
+on:
+  push:
+    branches: [investigate/cuda-contrib-build-time]
+    paths: [.github/workflows/dispatch-investigation.yml]
+permissions:
+  actions: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch build.yml without a browser
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_REF: ${{ github.ref_name }}
+        run: |
+          gh workflow run build.yml --repo "$GH_REPO" --ref "$BUILD_REF" \
+            -f version=1.31.0 \
+            -f commit_hash=402979ac1bef89dcd55add41eaa7277c407599eb \
+            -f target=onnxruntime -f release=false -f code_signing=false
