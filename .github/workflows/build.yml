@@ -6,7 +6,7 @@
 # 3. b.と2.の情報からreleaseのbodyを作成
 
 name: Build C++ Shared Library
-run-name: CUDA contrib investigation — contrib enabled without QUICK_BUILD
+run-name: CUDA contrib investigation — six individual option removals
 
 on:
   workflow_dispatch:
@@ -92,14 +92,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-onnxruntime:
+    name: ${{ matrix.artifact_name }}
     needs: create-draft-release
     timeout-minutes: 350
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
         # TODO: 外せる`--compile_no_warning_as_error`は外す
         include:
-          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-win-x64-cuda-contrib-no-quick
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-win-x64-cuda-trial-default-nvcc
             os: windows-2022
             spec_os: Windows
             spec_arch: x86_64
@@ -126,8 +128,8 @@ jobs:
               --compile_no_warning_as_error
               --use_cuda
               --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
               # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
-              onnxruntime_NVCC_THREADS=1
               onnxruntime_USE_FPA_INTB_GEMM=OFF
               onnxruntime_USE_FLASH_ATTENTION=OFF
               onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
@@ -136,7 +138,192 @@ jobs:
               onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
               onnxruntime_BUILD_UNIT_TESTS=OFF
             release_config: Release
-          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-linux-x64-cuda-contrib-no-quick
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-win-x64-cuda-trial-enable-fpa
+            os: windows-2022
+            spec_os: Windows
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            cuda_version: 12.8.1
+            # Windowsの場合デフォルトのパッケージ群では不十分であるため、必要そうなパッケージを指定する。ただしいくつかは不要かもしれない
+            cuda_sub_packages: |
+              ["cudart",
+               "cuobjdump",
+               "nvrtc",
+               "nvrtc_dev",
+               "nvcc",
+               "nvdisasm",
+               "thrust",
+               "cublas_dev",
+               "cufft_dev",
+               "curand_dev",
+               "cusolver_dev",
+               "cusparse_dev",
+               "visual_studio_integration"]
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.8.0.87_cuda12-archive.zip
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_NVCC_THREADS=1
+              onnxruntime_USE_FLASH_ATTENTION=OFF
+              onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
+              onnxruntime_USE_FP8_KV_CACHE=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-win-x64-cuda-trial-enable-flash
+            os: windows-2022
+            spec_os: Windows
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            cuda_version: 12.8.1
+            # Windowsの場合デフォルトのパッケージ群では不十分であるため、必要そうなパッケージを指定する。ただしいくつかは不要かもしれない
+            cuda_sub_packages: |
+              ["cudart",
+               "cuobjdump",
+               "nvrtc",
+               "nvrtc_dev",
+               "nvcc",
+               "nvdisasm",
+               "thrust",
+               "cublas_dev",
+               "cufft_dev",
+               "curand_dev",
+               "cusolver_dev",
+               "cusparse_dev",
+               "visual_studio_integration"]
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.8.0.87_cuda12-archive.zip
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_NVCC_THREADS=1
+              onnxruntime_USE_FPA_INTB_GEMM=OFF
+              onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
+              onnxruntime_USE_FP8_KV_CACHE=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-win-x64-cuda-trial-enable-efficient
+            os: windows-2022
+            spec_os: Windows
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            cuda_version: 12.8.1
+            # Windowsの場合デフォルトのパッケージ群では不十分であるため、必要そうなパッケージを指定する。ただしいくつかは不要かもしれない
+            cuda_sub_packages: |
+              ["cudart",
+               "cuobjdump",
+               "nvrtc",
+               "nvrtc_dev",
+               "nvcc",
+               "nvdisasm",
+               "thrust",
+               "cublas_dev",
+               "cufft_dev",
+               "curand_dev",
+               "cusolver_dev",
+               "cusparse_dev",
+               "visual_studio_integration"]
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.8.0.87_cuda12-archive.zip
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_NVCC_THREADS=1
+              onnxruntime_USE_FPA_INTB_GEMM=OFF
+              onnxruntime_USE_FLASH_ATTENTION=OFF
+              onnxruntime_USE_FP8_KV_CACHE=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-win-x64-cuda-trial-enable-fp8-cache
+            os: windows-2022
+            spec_os: Windows
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            cuda_version: 12.8.1
+            # Windowsの場合デフォルトのパッケージ群では不十分であるため、必要そうなパッケージを指定する。ただしいくつかは不要かもしれない
+            cuda_sub_packages: |
+              ["cudart",
+               "cuobjdump",
+               "nvrtc",
+               "nvrtc_dev",
+               "nvcc",
+               "nvdisasm",
+               "thrust",
+               "cublas_dev",
+               "cufft_dev",
+               "curand_dev",
+               "cusolver_dev",
+               "cusparse_dev",
+               "visual_studio_integration"]
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.8.0.87_cuda12-archive.zip
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_NVCC_THREADS=1
+              onnxruntime_USE_FPA_INTB_GEMM=OFF
+              onnxruntime_USE_FLASH_ATTENTION=OFF
+              onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-win-x64-cuda-trial-no-fatbin-compression
+            os: windows-2022
+            spec_os: Windows
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            cuda_version: 12.8.1
+            # Windowsの場合デフォルトのパッケージ群では不十分であるため、必要そうなパッケージを指定する。ただしいくつかは不要かもしれない
+            cuda_sub_packages: |
+              ["cudart",
+               "cuobjdump",
+               "nvrtc",
+               "nvrtc_dev",
+               "nvcc",
+               "nvdisasm",
+               "thrust",
+               "cublas_dev",
+               "cufft_dev",
+               "curand_dev",
+               "cusolver_dev",
+               "cusparse_dev",
+               "visual_studio_integration"]
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.8.0.87_cuda12-archive.zip
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_NVCC_THREADS=1
+              onnxruntime_USE_FPA_INTB_GEMM=OFF
+              onnxruntime_USE_FLASH_ATTENTION=OFF
+              onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
+              onnxruntime_USE_FP8_KV_CACHE=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-linux-x64-cuda-trial-default-nvcc
             os: ubuntu-22.04
             spec_os: Linux
             spec_arch: x86_64
@@ -150,6 +337,127 @@ jobs:
               --compile_no_warning_as_error
               --use_cuda
               --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_USE_FPA_INTB_GEMM=OFF
+              onnxruntime_USE_FLASH_ATTENTION=OFF
+              onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
+              onnxruntime_USE_FP8_KV_CACHE=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-linux-x64-cuda-trial-enable-fpa
+            os: ubuntu-22.04
+            spec_os: Linux
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            gcc_version: "13"
+            cuda_version: 12.9.1
+            cuda_sub_packages: "[]" # デフォルト
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.8.0.87_cuda12-archive.tar.xz
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_NVCC_THREADS=1
+              onnxruntime_USE_FLASH_ATTENTION=OFF
+              onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
+              onnxruntime_USE_FP8_KV_CACHE=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-linux-x64-cuda-trial-enable-flash
+            os: ubuntu-22.04
+            spec_os: Linux
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            gcc_version: "13"
+            cuda_version: 12.9.1
+            cuda_sub_packages: "[]" # デフォルト
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.8.0.87_cuda12-archive.tar.xz
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_NVCC_THREADS=1
+              onnxruntime_USE_FPA_INTB_GEMM=OFF
+              onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
+              onnxruntime_USE_FP8_KV_CACHE=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-linux-x64-cuda-trial-enable-efficient
+            os: ubuntu-22.04
+            spec_os: Linux
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            gcc_version: "13"
+            cuda_version: 12.9.1
+            cuda_sub_packages: "[]" # デフォルト
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.8.0.87_cuda12-archive.tar.xz
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_NVCC_THREADS=1
+              onnxruntime_USE_FPA_INTB_GEMM=OFF
+              onnxruntime_USE_FLASH_ATTENTION=OFF
+              onnxruntime_USE_FP8_KV_CACHE=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-linux-x64-cuda-trial-enable-fp8-cache
+            os: ubuntu-22.04
+            spec_os: Linux
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            gcc_version: "13"
+            cuda_version: 12.9.1
+            cuda_sub_packages: "[]" # デフォルト
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.8.0.87_cuda12-archive.tar.xz
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
+              # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
+              onnxruntime_NVCC_THREADS=1
+              onnxruntime_USE_FPA_INTB_GEMM=OFF
+              onnxruntime_USE_FLASH_ATTENTION=OFF
+              onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
+              CMAKE_CUDA_ARCHITECTURES=75\;80\;90
+              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
+              onnxruntime_BUILD_UNIT_TESTS=OFF
+            release_config: Release
+          - artifact_name: ${{ inputs.target || 'onnxruntime' }}-linux-x64-cuda-trial-no-fatbin-compression
+            os: ubuntu-22.04
+            spec_os: Linux
+            spec_arch: x86_64
+            linux_cross_arch: ""
+            symlink_workaround: false
+            gcc_version: "13"
+            cuda_version: 12.9.1
+            cuda_sub_packages: "[]" # デフォルト
+            cudnn_url: https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.8.0.87_cuda12-archive.tar.xz
+            build_opts: |-
+              --compile_no_warning_as_error
+              --use_cuda
+              --cmake_extra_defines
+              onnxruntime_QUICK_BUILD=ON
               # そのままビルドするとGitHub ActionsのRunnerが耐えきれなくなってビルドが落ちるのでビルドを軽量化する
               onnxruntime_NVCC_THREADS=1
               onnxruntime_USE_FPA_INTB_GEMM=OFF
@@ -157,7 +465,6 @@ jobs:
               onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF
               onnxruntime_USE_FP8_KV_CACHE=OFF
               CMAKE_CUDA_ARCHITECTURES=75\;80\;90
-              onnxruntime_CUDA_FATBIN_COMPRESS_SIZE=ON
               onnxruntime_BUILD_UNIT_TESTS=OFF
             release_config: Release
 
@@ -697,3 +1004,43 @@ jobs:
         with:
           upload-url: ${{ fromJson(needs.create-draft-release.outputs.release).upload_url }}
           files: ${{ env.RELEASE_NAME }}.tgz
+
+  summarize-option-trials:
+    if: always()
+    needs: build-onnxruntime
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Collect per-option build outcomes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > jobs.json
+          python - <<'PYTHON'
+          import datetime, json, os
+          from pathlib import Path
+          jobs = json.loads(Path('jobs.json').read_text())['jobs']
+          lines = ['# Individual CUDA option removals', '',
+                   'Baseline: PR #137 with Contrib Ops enabled and QUICK_BUILD enabled.',
+                   'Each candidate removes exactly one additional option; all builds are cold.', '',
+                   '| Candidate | Result | Job duration |', '| --- | --- | --- |']
+          for job in jobs:
+              if '-trial-' not in job['name']:
+                  continue
+              start = datetime.datetime.fromisoformat(job['started_at'])
+              end = datetime.datetime.fromisoformat(job['completed_at']) if job['completed_at'] else start
+              minutes = (end - start).total_seconds() / 60
+              lines.append(f"| {job['name']} | {job['conclusion']} | {minutes:.1f} min |")
+          lines += ['', 'A successful individual removal does not prove that combinations of removals build successfully.',
+                    'GPU inference correctness/performance and broader GPU architecture coverage are not tested here.']
+          report = '\n'.join(lines) + '\n'
+          Path('CUDA_OPTION_TRIAL_RESULTS.md').write_text(report)
+          Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(report)
+          PYTHON
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cuda-option-trial-results
+          path: CUDA_OPTION_TRIAL_RESULTS.md
+          retention-days: 14
