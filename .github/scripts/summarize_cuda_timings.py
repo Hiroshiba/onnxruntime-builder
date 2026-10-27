@@ -22,7 +22,7 @@ def collect(run_id):
         if 'onnxruntime-' not in name or 'cuda-' not in name:
             continue
         platform = 'Windows' if '-win-' in name else 'Linux'
-        match = re.search(r'-cuda-(baseline-r[23]|contrib-r[23]|combined-no-quick|combined)(?:,|$)', name)
+        match = re.search(r'-cuda-(baseline-r[23]|contrib-r[23]|all-removable-strict-r[123]|all-removable-r[123]|combined-r[23]|combined-no-quick|combined)(?:,|$)', name)
         if match:
             variant = match[1]
         elif '-cuda-baseline,' in name:
@@ -43,7 +43,7 @@ def collect(run_id):
 
 
 def main():
-    rows = collect(40314439974) + collect(int(os.environ['GITHUB_RUN_ID']))
+    rows = collect(40314439974) + collect(40385495477) + collect(int(os.environ['GITHUB_RUN_ID']))
     fields = ['run', 'platform', 'variant', 'result', 'total', 'preparation', 'build', 'postprocess']
     with Path('CUDA_PHASE_TIMINGS.csv').open('w', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
@@ -62,8 +62,8 @@ def main():
               '| OS | Condition | Count | Median total | Total range | Median build step | Build range |',
               '| --- | --- | ---: | ---: | --- | ---: | --- |']
     for platform in ['Windows', 'Linux']:
-        for condition in ['baseline', 'contrib']:
-            samples = [row for row in rows if row['platform'] == platform and row['variant'].startswith(condition+'-r') and row['result']=='success']
+        for condition in ['baseline', 'contrib', 'combined', 'all-removable', 'all-removable-strict']:
+            samples = [row for row in rows if row['platform'] == platform and (re.fullmatch(re.escape(condition)+r'-r\d+', row['variant']) or (condition == 'combined' and row['variant'] == 'combined')) and row['result']=='success']
             if not samples:
                 continue
             total = [r['total'] for r in samples]

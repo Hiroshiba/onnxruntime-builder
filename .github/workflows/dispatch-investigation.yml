@@ -9,7 +9,7 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch repeated timings and combined option removals
+      - name: Dispatch 16 cold builds for maximal option removal repeats
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
